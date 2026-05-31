@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="samples/TurboHomeConnect.BlazorSample/TurboHomeConnect.BlazorSample.csproj" />
+  <Project Path="src/TurboHomeConnect/TurboHomeConnect.csproj" />
+  <Project Path="tests/TurboHomeConnect.Tests/TurboHomeConnect.Tests.csproj" />
+</Solution>

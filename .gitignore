@@ -1,0 +1,17 @@
+bin/
+obj/
+out/
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+.DS_Store
+TestResults/
+*.received.*
+.nuget/
+.packages/
+artifacts/
+.env
+.tokens/

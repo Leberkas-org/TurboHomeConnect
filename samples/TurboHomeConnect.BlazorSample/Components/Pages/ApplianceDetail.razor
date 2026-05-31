@@ -1,0 +1,435 @@
+@page "/appliance/{HaId}"
+@rendermode InteractiveServer
+@inject HomeConnectService Svc
+@implements IDisposable
+@using System.Text.Json
+
+@{
+    var appliance = Svc.Appliances.FirstOrDefault(a => a.HaId == HaId);
+    var status   = Svc.GetStatusFor(HaId);
+    var settings = Svc.GetSettingsFor(HaId);
+    IReadOnlyList<HCProgram>? available = Svc.GetAvailableProgramsFor(HaId);
+    HCProgram? active   = Svc.GetActiveProgramFor(HaId);
+    HCProgram? selected = Svc.GetSelectedProgramFor(HaId);
+    var commands = Svc.GetCommandsFor(HaId);
+
+    // Active program wins; selected is the fallback so you can configure a program before starting.
+    var optionsScope = active is not null ? "Active" : (selected is not null ? "Selected" : null);
+    var optionsList  = active?.Options ?? selected?.Options;
+    var optionsProgramKey = active?.Key ?? selected?.Key;
+}
+
+<NavLink href="">&larr; All appliances</NavLink>
+
+@if (appliance is null)
+{
+    <h1>Unknown appliance</h1>
+    <p>No appliance with <code>haId = @HaId</code> in the current list.</p>
+}
+else
+{
+    <HeroWidget Appliance="@appliance" />
+
+    @if (Svc.LastError is not null)
+    {
+        <div class="err-banner">
+            <strong>Last error:</strong> @Svc.LastError
+            <button class="err-dismiss" @onclick="Svc.ClearLastError" title="Dismiss">×</button>
+        </div>
+    }
+
+    <div class="actions">
+        <button @onclick="RefreshAllAsync" disabled="@_busy">@(_busy ? "Refreshing…" : "Refresh all")</button>
+    </div>
+
+    @* ── Status ─────────────────────────────────────────── *@
+    <h2>Status</h2>
+    @if (status is null)
+    {
+        <p><em>Loading…</em></p>
+    }
+    else if (status.Count == 0)
+    {
+        <p><em>No status keys.</em></p>
+    }
+    else
+    {
+        <table class="kv">
+            <thead><tr><th>Key</th><th>Value</th><th>Display</th><th>Unit</th></tr></thead>
+            <tbody>
+                @foreach (var s in status)
+                {
+                    <tr>
+                        <td><code>@ShortKey(s.Key)</code></td>
+                        <td><code>@s.Value</code></td>
+                        <td>@s.DisplayValue</td>
+                        <td>@s.Unit</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @* ── Settings ──────────────────────────────────────── *@
+    <h2>Settings</h2>
+    @if (settings is null)
+    {
+        <p><em>Loading…</em></p>
+    }
+    else if (settings.Count == 0)
+    {
+        <p><em>No settings.</em></p>
+    }
+    else
+    {
+        <table class="kv">
+            <thead><tr><th>Key</th><th>Value</th><th>Edit</th></tr></thead>
+            <tbody>
+                @foreach (var s in settings)
+                {
+                    <tr>
+                        <td><code>@ShortKey(s.Key)</code></td>
+                        <td>
+                            <code>@s.Value</code>@if (!string.IsNullOrEmpty(s.DisplayValue)) { <span class="muted"> · @s.DisplayValue</span> }
+                            @if (s.Constraints is not null && (s.Constraints.Min is not null || s.Constraints.Max is not null || s.Constraints.StepSize is not null))
+                            {
+                                <div class="muted small">@FormatConstraints(s.Constraints, s.Unit)</div>
+                            }
+                        </td>
+                        <td>@RenderSettingEditor(s)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @* ── Programs ──────────────────────────────────────── *@
+    <h2>Programs</h2>
+    <div class="program-state">
+        <div><strong>Selected:</strong> @(selected is null ? "(none)" : $"{ShortKey(selected!.Key)}")</div>
+        <div>
+            <strong>Active:</strong>
+            @if (active is null)
+            {
+                <span>(none)</span>
+            }
+            else
+            {
+                <span>@ShortKey(active.Key)</span>
+                <button class="btn-danger inline" @onclick="StopActiveAsync" disabled="@_busy">Stop</button>
+            }
+        </div>
+    </div>
+    @if (available is null)
+    {
+        <p><em>Loading available programs…</em></p>
+    }
+    else if (available.Count == 0)
+    {
+        <p><em>No available programs.</em></p>
+    }
+    else
+    {
+        <table class="kv">
+            <thead><tr><th>Program</th><th>Available</th><th>Actions</th></tr></thead>
+            <tbody>
+                @foreach (var p in available)
+                {
+                    var isAvailable = p.Constraints?.Available ?? true;
+                    <tr>
+                        <td><code>@ShortKey(p.Key)</code></td>
+                        <td>@(isAvailable ? "✓" : "—")</td>
+                        <td>
+                            <button class="inline" @onclick="() => SelectAsync(p.Key)" disabled="@(_busy || !isAvailable)">Select</button>
+                            <button class="inline" @onclick="() => StartAsync(p.Key)" disabled="@(_busy || !isAvailable)">Start</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @* ── Program options (active wins; otherwise selected) ───── *@
+    @if (optionsScope is not null && optionsProgramKey is not null)
+    {
+        <h2>@optionsScope program options · <code class="muted small">@ShortKey(optionsProgramKey)</code></h2>
+        @if (optionsList is null || optionsList.Count == 0)
+        {
+            <p><em>This program has no configurable options.</em></p>
+        }
+        else
+        {
+            <table class="kv">
+                <thead><tr><th>Key</th><th>Value</th><th>Edit</th></tr></thead>
+                <tbody>
+                    @foreach (var o in optionsList)
+                    {
+                        var scope = optionsScope!;  // "Active" or "Selected"
+                        // Overlay constraints from the program spec — /selected and /active strip them away.
+                        var spec = Svc.GetProgramSpec(HaId, optionsProgramKey);
+                        var specOption = spec?.Options?.FirstOrDefault(so => so.Key == o.Key);
+                        var constraints = o.Constraints ?? specOption?.Constraints;
+                        // Read-only iff: (a) spec is loaded AND the option isn't in it (= live-state
+                        // field like ProgramProgress/RemainingProgramTime), OR (b) the spec marks
+                        // it access:"read". When the spec isn't loaded yet, default to read-only —
+                        // safer than allowing edits on a field we haven't validated.
+                        var isReadOnly = spec is null
+                            || specOption is null
+                            || string.Equals(specOption.Constraints?.Access, "read", StringComparison.OrdinalIgnoreCase);
+                        <tr>
+                            <td><code title="@o.Key">@ShortKey(o.Key)</code></td>
+                            <td>
+                                <code>@o.Value</code>@if (!string.IsNullOrEmpty(o.Unit)) { <span class="muted"> @o.Unit</span> }
+                                @if (constraints is not null)
+                                {
+                                    <div class="muted small">@FormatConstraints(constraints, o.Unit)</div>
+                                }
+                            </td>
+                            <td>@(isReadOnly ? RenderReadOnly() : RenderOptionEditor(o, constraints, scope))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+
+    @* ── Commands ──────────────────────────────────────── *@
+    <h2>Commands</h2>
+    @if (commands is null)
+    {
+        <p><em>Loading…</em></p>
+    }
+    else if (commands.Count == 0)
+    {
+        <p><em>No commands.</em></p>
+    }
+    else
+    {
+        <div class="cmd-row">
+            @foreach (var c in commands)
+            {
+                <button class="inline" @onclick="() => ExecuteAsync(c.Key)" disabled="@_busy" title="@c.Key">@(c.Name ?? ShortKey(c.Key))</button>
+            }
+        </div>
+    }
+
+    @* ── Recent events ─────────────────────────────────── *@
+    <h2>Recent events</h2>
+    @if (RecentEvents.Count == 0)
+    {
+        <p><em>No events from this appliance in the buffer yet.</em></p>
+    }
+    else
+    {
+        <ul class="event-list-mini">
+            @foreach (var e in RecentEvents)
+            {
+                <li>
+                    <span class="evt-type">@e.Type</span>
+                    @foreach (var i in e.Items)
+                    {
+                        <code>@ShortKey(i.Key)</code><span> = </span><code>@i.Value</code><br />
+                    }
+                </li>
+            }
+        </ul>
+    }
+}
+
+@code {
+    [Parameter] public string HaId { get; set; } = string.Empty;
+
+    private bool _busy;
+
+    private IReadOnlyList<HomeConnectEventMessage> RecentEvents =>
+        Svc.SnapshotEvents().Where(e => e.HaId == HaId).Take(15).ToList();
+
+    protected override void OnInitialized() => Svc.OnStateChanged += StateHasChangedSafe;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Cache-aware lazy load: only fire requests for slots that aren't already populated.
+        // After the first visit, SSE keeps the caches current — subsequent navigations make 0 API calls.
+        var tasks = new List<Task>();
+        if (Svc.GetStatusFor(HaId)             is null) tasks.Add(Svc.RefreshStatusAsync(HaId));
+        if (Svc.GetSettingsFor(HaId)           is null) tasks.Add(Svc.RefreshSettingsAsync(HaId));
+        if (Svc.GetAvailableProgramsFor(HaId)  is null) tasks.Add(Svc.RefreshProgramsAsync(HaId));
+        if (Svc.GetCommandsFor(HaId)           is null) tasks.Add(Svc.RefreshCommandsAsync(HaId));
+        if (tasks.Count > 0) await Task.WhenAll(tasks);
+    }
+
+    private async Task RefreshAllAsync()
+    {
+        _busy = true;
+        try { await OnParametersSetAsync(); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task ApplySettingAsync(string key, JsonElement value, string? unit)
+    {
+        _busy = true;
+        try { await Svc.SetSettingAsync(HaId, key, value, unit); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task SelectAsync(string programKey)
+    {
+        _busy = true;
+        try { await Svc.SelectProgramAsync(HaId, programKey); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task StartAsync(string programKey)
+    {
+        _busy = true;
+        try { await Svc.StartProgramAsync(HaId, programKey); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task StopActiveAsync()
+    {
+        _busy = true;
+        try { await Svc.StopActiveProgramAsync(HaId); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task ExecuteAsync(string commandKey)
+    {
+        _busy = true;
+        try { await Svc.ExecuteCommandAsync(HaId, commandKey); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private RenderFragment RenderSettingEditor(SettingValue s) => __builder =>
+    {
+        var readOnly = string.Equals(s.Constraints?.Access, "read", StringComparison.OrdinalIgnoreCase);
+        if (readOnly) { __builder.AddContent(0, "—"); return; }
+
+        var allowed = s.Constraints?.AllowedValues;
+        var displays = s.Constraints?.DisplayValues;
+
+        if (allowed is { Count: > 0 })
+        {
+            // Enum-style dropdown
+            <select @onchange="@(e => OnEnumChanged(s, e.Value?.ToString()))" disabled="@_busy">
+                @for (var i = 0; i < allowed.Count; i++)
+                {
+                    var v = allowed[i];
+                    var label = displays is { Count: var dc } && i < dc ? displays[i] : v;
+                    var current = s.Value.ValueKind == JsonValueKind.String && s.Value.GetString() == v;
+                    <option value="@v" selected="@current">@label</option>
+                }
+            </select>
+        }
+        else if (s.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            <input type="checkbox" checked="@s.Value.GetBoolean()" disabled="@_busy"
+                   @onchange="@(e => OnBoolChanged(s, (bool)(e.Value ?? false)))" />
+        }
+        else if (s.Value.ValueKind == JsonValueKind.Number)
+        {
+            <input type="number" value="@s.Value" disabled="@_busy"
+                   min="@(s.Constraints?.Min?.ToString() ?? "")"
+                   max="@(s.Constraints?.Max?.ToString() ?? "")"
+                   step="@(s.Constraints?.StepSize?.ToString() ?? "any")"
+                   @onchange="@(e => OnNumberChanged(s, e.Value?.ToString()))" />
+        }
+        else
+        {
+            <input type="text" value="@s.Value" disabled="@_busy"
+                   @onchange="@(e => OnStringChanged(s, e.Value?.ToString()))" />
+        }
+    };
+
+    private Task OnEnumChanged(SettingValue s, string? v) =>
+        string.IsNullOrEmpty(v) ? Task.CompletedTask
+            : ApplySettingAsync(s.Key, JsonSerializer.SerializeToElement(v), s.Unit);
+
+    private Task OnBoolChanged(SettingValue s, bool v) =>
+        ApplySettingAsync(s.Key, JsonSerializer.SerializeToElement(v), s.Unit);
+
+    private Task OnNumberChanged(SettingValue s, string? v)
+    {
+        if (string.IsNullOrEmpty(v)) return Task.CompletedTask;
+        if (double.TryParse(v, System.Globalization.CultureInfo.InvariantCulture, out var d))
+            return ApplySettingAsync(s.Key, JsonSerializer.SerializeToElement(d), s.Unit);
+        return Task.CompletedTask;
+    }
+
+    private Task OnStringChanged(SettingValue s, string? v) =>
+        ApplySettingAsync(s.Key, JsonSerializer.SerializeToElement(v ?? ""), s.Unit);
+
+    private async Task ApplyOptionAsync(string key, JsonElement value, string? unit, string scope)
+    {
+        _busy = true;
+        try
+        {
+            if (scope == "Active")
+                await Svc.SetActiveProgramOptionAsync(HaId, key, value, unit);
+            else
+                await Svc.SetSelectedProgramOptionAsync(HaId, key, value, unit);
+        }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private static RenderFragment RenderReadOnly() => __builder => __builder.AddContent(0, "—");
+
+    private RenderFragment RenderOptionEditor(ProgramOption o, ValueConstraints? constraints, string scope) => __builder =>
+    {
+        var allowed = constraints?.AllowedValues;
+        if (allowed is { Count: > 0 })
+        {
+            <select @onchange="@(e => ApplyOptionAsync(o.Key, JsonSerializer.SerializeToElement(e.Value?.ToString() ?? ""), o.Unit, scope))" disabled="@_busy">
+                @foreach (var v in allowed)
+                {
+                    var current = o.Value.ValueKind == JsonValueKind.String && o.Value.GetString() == v;
+                    <option value="@v" selected="@current">@ShortKey(v)</option>
+                }
+            </select>
+        }
+        else if (o.Value.ValueKind is JsonValueKind.True or JsonValueKind.False)
+        {
+            <input type="checkbox" checked="@o.Value.GetBoolean()" disabled="@_busy"
+                   @onchange="@(e => ApplyOptionAsync(o.Key, JsonSerializer.SerializeToElement((bool)(e.Value ?? false)), o.Unit, scope))" />
+        }
+        else if (o.Value.ValueKind == JsonValueKind.Number)
+        {
+            <input type="number" value="@o.Value" disabled="@_busy"
+                   min="@(constraints?.Min?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")"
+                   max="@(constraints?.Max?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "")"
+                   step="@(constraints?.StepSize?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "any")"
+                   @onchange="@(async e => {
+                       if (double.TryParse(e.Value?.ToString(), System.Globalization.CultureInfo.InvariantCulture, out var d))
+                           await ApplyOptionAsync(o.Key, JsonSerializer.SerializeToElement(d), o.Unit, scope);
+                   })" />
+        }
+        else
+        {
+            <input type="text" value="@o.Value" disabled="@_busy"
+                   @onchange="@(e => ApplyOptionAsync(o.Key, JsonSerializer.SerializeToElement(e.Value?.ToString() ?? ""), o.Unit, scope))" />
+        }
+    };
+
+    private static string FormatConstraints(ValueConstraints c, string? unit)
+    {
+        var parts = new List<string>();
+        if (c.Min is not null && c.Max is not null)
+            parts.Add($"{c.Min}–{c.Max}{(string.IsNullOrEmpty(unit) ? "" : " " + unit)}");
+        else if (c.Min is not null) parts.Add($"≥ {c.Min}");
+        else if (c.Max is not null) parts.Add($"≤ {c.Max}");
+        if (c.StepSize is not null) parts.Add($"step {c.StepSize}");
+        if (c.AllowedValues is { Count: > 0 } a) parts.Add($"{a.Count} options");
+        return string.Join(", ", parts);
+    }
+
+    // "BSH.Common.Setting.PowerState" → "PowerState" — full key is in title/tooltip
+    private static string ShortKey(string key)
+    {
+        var i = key.LastIndexOf('.');
+        return i >= 0 && i + 1 < key.Length ? key[(i + 1)..] : key;
+    }
+
+    private void StateHasChangedSafe() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Svc.OnStateChanged -= StateHasChangedSafe;
+}

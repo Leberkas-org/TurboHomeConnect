@@ -1,0 +1,62 @@
+@page "/events"
+@rendermode InteractiveServer
+@inject HomeConnectService Svc
+@implements IDisposable
+
+<h1>Live events</h1>
+
+<p>
+    Showing the last <strong>@Svc.SnapshotEvents().Count</strong> events received from the Home
+    Connect SSE stream (newest first; capped at 200).
+</p>
+
+@if (!Svc.IsConnected)
+{
+    <p><em>Not connected — see the Appliances page.</em></p>
+}
+else
+{
+    var events = Svc.SnapshotEvents();
+    if (events.Count == 0)
+    {
+        <p><em>Waiting for events…</em></p>
+    }
+    else
+    {
+        <table class="event-table">
+            <thead>
+                <tr><th>Type</th><th>haId</th><th>Items</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var e in events)
+                {
+                    <tr>
+                        <td><span class="evt-type">@e.Type</span></td>
+                        <td><code>@e.HaId</code></td>
+                        <td>
+                            @if (e.Items.Count == 0)
+                            {
+                                <em>(empty)</em>
+                            }
+                            else
+                            {
+                                @foreach (var i in e.Items)
+                                {
+                                    <div><code>@i.Key</code> = <code>@i.Value</code>@if (!string.IsNullOrEmpty(i.DisplayValue)) { <span class="muted"> · @i.DisplayValue</span> }</div>
+                                }
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    protected override void OnInitialized() => Svc.OnStateChanged += StateHasChangedSafe;
+
+    private void StateHasChangedSafe() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Svc.OnStateChanged -= StateHasChangedSafe;
+}

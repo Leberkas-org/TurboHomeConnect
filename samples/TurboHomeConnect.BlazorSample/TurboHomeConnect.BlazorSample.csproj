@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>TurboHomeConnect.BlazorSample</RootNamespace>
+    <!-- Samples don't need to obey every code-analysis rule — keep CAs informational. -->
+    <NoWarn>$(NoWarn);CA1848;CA1859;CA1873;CA2007</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\TurboHomeConnect\TurboHomeConnect.csproj" />
+  </ItemGroup>
+</Project>

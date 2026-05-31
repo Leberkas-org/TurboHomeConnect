@@ -1,0 +1,171 @@
+@using System.Text.Json
+@inject HomeConnectService Svc
+
+@{
+    var statusList   = Svc.GetStatusFor(Appliance.HaId) ?? [];
+    var settingsList = Svc.GetSettingsFor(Appliance.HaId) ?? [];
+    var active       = Svc.GetActiveProgramFor(Appliance.HaId);
+}
+
+<div class="hero hero-@(Appliance.Type.ToLowerInvariant())">
+    <div class="hero-head">
+        <div class="hero-emoji">@EmojiFor(Appliance.Type)</div>
+        <div class="hero-title">
+            <div class="hero-brand">@Appliance.Brand @Appliance.Type</div>
+            <div class="hero-haid"><code>@Appliance.HaId</code></div>
+        </div>
+        <div class="hero-conn">
+            <span class="@(Appliance.Connected ? "dot-on" : "dot-off")">●</span>
+            @(Appliance.Connected ? "connected" : "offline")
+        </div>
+    </div>
+
+    <div class="hero-body">
+        @switch (Appliance.Type)
+        {
+            case "FridgeFreezer":
+                {
+                    var door = StatusValueAsString(statusList, "BSH.Common.Status.DoorState");
+                    var fridgeSet  = SettingNumber(settingsList, "Refrigeration.FridgeFreezer.Setting.SetpointTemperatureRefrigerator");
+                    var freezerSet = SettingNumber(settingsList, "Refrigeration.FridgeFreezer.Setting.SetpointTemperatureFreezer");
+                    var superF = SettingBool(settingsList, "Refrigeration.FridgeFreezer.Setting.SuperModeFreezer");
+                    var superR = SettingBool(settingsList, "Refrigeration.FridgeFreezer.Setting.SuperModeRefrigerator");
+
+                    <div class="stats">
+                        <Stat Label="Door" Value="@(Short(door) ?? "—")" />
+                        <Stat Label="Fridge setpoint" Value="@(fridgeSet is not null ? $"{fridgeSet}°C" : "—")" />
+                        <Stat Label="Freezer setpoint" Value="@(freezerSet is not null ? $"{freezerSet}°C" : "—")" />
+                    </div>
+                    @if (superF == true || superR == true)
+                    {
+                        <div class="hero-badges">
+                            @if (superR == true) { <span class="badge badge-cold">Super Fridge</span> }
+                            @if (superF == true) { <span class="badge badge-cold">Super Freezer</span> }
+                        </div>
+                    }
+                    break;
+                }
+            case "Washer":
+            case "Dryer":
+            case "Dishwasher":
+                {
+                    var state    = Short(StatusValueAsString(statusList, "BSH.Common.Status.OperationState"));
+                    var door     = Short(StatusValueAsString(statusList, "BSH.Common.Status.DoorState"));
+                    var remainingSec = ProgramOptionNumber(active, "BSH.Common.Option.RemainingProgramTime");
+                    var progress = ProgramOptionNumber(active, "BSH.Common.Option.ProgramProgress");
+
+                    <div class="stats">
+                        <Stat Label="State" Value="@(state ?? "—")" />
+                        <Stat Label="Active program" Value="@(active is null ? "—" : Short(active.Key)!)" />
+                        <Stat Label="Door" Value="@(door ?? "—")" />
+                        <Stat Label="Remaining" Value="@(FormatDuration(remainingSec))" />
+                    </div>
+                    @if (progress is not null)
+                    {
+                        <div class="progress"><div class="bar" style="width: @progress%"></div></div>
+                        <div class="muted small">@progress% complete</div>
+                    }
+                    break;
+                }
+            case "Oven":
+                {
+                    var state    = Short(StatusValueAsString(statusList, "BSH.Common.Status.OperationState"));
+                    var door     = Short(StatusValueAsString(statusList, "BSH.Common.Status.DoorState"));
+                    var current  = StatusNumber(statusList, "Cooking.Oven.Status.CurrentCavityTemperature");
+                    var remainingSec = ProgramOptionNumber(active, "BSH.Common.Option.RemainingProgramTime");
+
+                    <div class="stats">
+                        <Stat Label="State" Value="@(state ?? "—")" />
+                        <Stat Label="Cavity temp" Value="@(current is not null ? $"{current}°C" : "—")" />
+                        <Stat Label="Door" Value="@(door ?? "—")" />
+                        <Stat Label="Remaining" Value="@(FormatDuration(remainingSec))" />
+                    </div>
+                    break;
+                }
+            case "CoffeeMaker":
+                {
+                    var state = Short(StatusValueAsString(statusList, "BSH.Common.Status.OperationState"));
+                    var power = Short(StatusValueAsString(statusList, "BSH.Common.Setting.PowerState"))
+                                ?? Short(SettingValueAsString(settingsList, "BSH.Common.Setting.PowerState"));
+
+                    <div class="stats">
+                        <Stat Label="State" Value="@(state ?? "—")" />
+                        <Stat Label="Power" Value="@(power ?? "—")" />
+                        <Stat Label="Active program" Value="@(active is null ? "—" : Short(active.Key)!)" />
+                    </div>
+                    break;
+                }
+            default:
+                {
+                    var state = Short(StatusValueAsString(statusList, "BSH.Common.Status.OperationState"));
+                    var power = Short(SettingValueAsString(settingsList, "BSH.Common.Setting.PowerState"));
+                    <div class="stats">
+                        <Stat Label="State" Value="@(state ?? "—")" />
+                        <Stat Label="Power" Value="@(power ?? "—")" />
+                    </div>
+                    break;
+                }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public HomeAppliance Appliance { get; set; } = default!;
+
+    private static string EmojiFor(string type) => type switch
+    {
+        "FridgeFreezer" => "🧊",
+        "Washer"        => "🌀",
+        "Dryer"         => "♨️",
+        "Dishwasher"    => "🍽️",
+        "Oven"          => "🔥",
+        "CoffeeMaker"   => "☕",
+        _               => "🏠",
+    };
+
+    // "BSH.Common.EnumType.PowerState.On" → "On"; "BSH.Common.Status.DoorState" → "DoorState"
+    private static string? Short(string? key)
+    {
+        if (string.IsNullOrEmpty(key)) return null;
+        var i = key.LastIndexOf('.');
+        return i >= 0 && i + 1 < key.Length ? key[(i + 1)..] : key;
+    }
+
+    private static string? StatusValueAsString(IReadOnlyList<StatusValue> list, string key)
+        => list.FirstOrDefault(s => s.Key == key) is { } s ? ValueAsString(s.Value) : null;
+
+    private static string? SettingValueAsString(IReadOnlyList<SettingValue> list, string key)
+        => list.FirstOrDefault(s => s.Key == key) is { } s ? ValueAsString(s.Value) : null;
+
+    private static double? StatusNumber(IReadOnlyList<StatusValue> list, string key)
+        => list.FirstOrDefault(s => s.Key == key)?.Value is { ValueKind: JsonValueKind.Number } v ? v.GetDouble() : null;
+
+    private static double? SettingNumber(IReadOnlyList<SettingValue> list, string key)
+        => list.FirstOrDefault(s => s.Key == key)?.Value is { ValueKind: JsonValueKind.Number } v ? v.GetDouble() : null;
+
+    private static double? ProgramOptionNumber(HCProgram? program, string key)
+        => program?.Options?.FirstOrDefault(o => o.Key == key)?.Value is { ValueKind: JsonValueKind.Number } v
+            ? v.GetDouble() : null;
+
+    private static bool? SettingBool(IReadOnlyList<SettingValue> list, string key)
+        => list.FirstOrDefault(s => s.Key == key)?.Value is { } v
+            ? v.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => (bool?)null }
+            : null;
+
+    private static string? ValueAsString(JsonElement v) => v.ValueKind switch
+    {
+        JsonValueKind.String => v.GetString(),
+        JsonValueKind.Number => v.GetRawText(),
+        JsonValueKind.True   => "true",
+        JsonValueKind.False  => "false",
+        JsonValueKind.Null   => null,
+        _                    => v.GetRawText(),
+    };
+
+    private static string FormatDuration(double? totalSeconds)
+    {
+        if (totalSeconds is null || totalSeconds <= 0) return "—";
+        var ts = TimeSpan.FromSeconds(totalSeconds.Value);
+        return ts.Hours > 0 ? $"{ts.Hours}h {ts.Minutes:D2}m" : $"{ts.Minutes}m {ts.Seconds:D2}s";
+    }
+}

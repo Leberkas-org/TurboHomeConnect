@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>TurboHomeConnect</RootNamespace>
+    <AssemblyName>TurboHomeConnect</AssemblyName>
+    <PackageId>TurboHomeConnect</PackageId>
+    <Description>Channel-based streaming client for the Home Connect API, built on Akka.Streams and TurboHTTP.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Akka" />
+    <PackageReference Include="Akka.Streams" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="TurboHomeConnect.Tests" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,98 @@
+@page "/"
+@rendermode InteractiveServer
+@inject HomeConnectService Svc
+@implements IDisposable
+
+<h1>Appliances</h1>
+
+@if (!Svc.IsAuthorized)
+{
+    <div class="banner">
+        <p>No cached OAuth token found. Click <strong>Authorize</strong> — a browser tab will open
+            on <code>simulator.home-connect.com</code>. Once you grant access, the page will update.</p>
+        <button @onclick="AuthorizeAsync" disabled="@_busy">@(_busy ? "Authorizing…" : "Authorize")</button>
+        @if (_authError is not null)
+        {
+            <pre class="err">@_authError</pre>
+        }
+    </div>
+}
+else if (!Svc.IsConnected)
+{
+    <p><em>Connecting to Home Connect…</em></p>
+}
+else if (Svc.Appliances.Count == 0)
+{
+    <p><em>No appliances on this account yet.</em></p>
+}
+else
+{
+    <table class="appliance-list">
+        <thead>
+            <tr>
+                <th>haId</th>
+                <th>Brand</th>
+                <th>Type</th>
+                <th>Connected</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var a in Svc.Appliances)
+            {
+                <tr>
+                    <td><code>@a.HaId</code></td>
+                    <td>@a.Brand</td>
+                    <td>@a.Type</td>
+                    <td>
+                        <span class="@(a.Connected ? "dot-on" : "dot-off")" title="@(a.Connected ? "online" : "offline")">●</span>
+                    </td>
+                    <td>
+                        <NavLink href="@($"appliance/{Uri.EscapeDataString(a.HaId)}")">Details →</NavLink>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@if (Svc.LastError is not null)
+{
+    <div class="err-banner">
+        <strong>Last error:</strong> @Svc.LastError
+        <button class="err-dismiss" @onclick="Svc.ClearLastError" title="Dismiss">×</button>
+    </div>
+}
+
+@code {
+    private bool _busy;
+    private string? _authError;
+
+    protected override void OnInitialized()
+    {
+        Svc.OnStateChanged += StateHasChangedSafe;
+    }
+
+    private async Task AuthorizeAsync()
+    {
+        _busy = true;
+        _authError = null;
+        try
+        {
+            await Svc.AuthorizeAsync();
+        }
+        catch (Exception ex)
+        {
+            _authError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private void StateHasChangedSafe() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Svc.OnStateChanged -= StateHasChangedSafe;
+}
