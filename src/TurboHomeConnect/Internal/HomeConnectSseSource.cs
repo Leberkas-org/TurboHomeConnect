@@ -16,7 +16,7 @@ internal static class HomeConnectSseSource
     public static Source<IHomeConnectMessage, NotUsed> Create(
         HttpClient http,
         Func<CancellationToken, Task<string>> tokenProvider,
-        ISubscribeCommand command,
+        SubscribeCommand command,
         RestartSettings restart)
     {
         var subscriptionHaId = (command as SubscribeEventsCommand)?.HaId;
@@ -29,7 +29,7 @@ internal static class HomeConnectSseSource
     private static Source<IHomeConnectMessage, NotUsed> CreateOnce(
         HttpClient http,
         Func<CancellationToken, Task<string>> tokenProvider,
-        ISubscribeCommand command,
+        SubscribeCommand command,
         string? subscriptionHaId)
     {
         return Source.UnfoldResourceAsync<ServerSentEvent, SseConnectionState>(
@@ -45,7 +45,7 @@ internal static class HomeConnectSseSource
     private static async Task<SseConnectionState> OpenAsync(
         HttpClient http,
         Func<CancellationToken, Task<string>> tokenProvider,
-        ISubscribeCommand command)
+        SubscribeCommand command)
     {
         var token = await tokenProvider(CancellationToken.None).ConfigureAwait(false);
         var request = command.BuildRequest();

@@ -7,19 +7,21 @@ namespace TurboHomeConnect.Internal;
 
 internal sealed class HomeConnectClient : IHomeConnectClient
 {
-    private readonly ChannelWriter<IHomeConnectCommand> _commands;
+    private readonly ChannelWriter<HomeConnectCommand> _commands;
     private readonly IActorRef _streamOwner;
     private readonly IDisposable? _ownedResources;
     private readonly ConcurrentDictionary<Guid, TaskCompletionSource<ICorrelatedResponse>> _pending = new();
     private readonly Channel<IHomeConnectMessage> _userChannel = Channel.CreateUnbounded<IHomeConnectMessage>(
         new UnboundedChannelOptions { SingleReader = false, SingleWriter = true });
+    private readonly Task _dispatchLoop;
 
     private int _disposed;
 
     public ChannelReader<IHomeConnectMessage> Responses => _userChannel.Reader;
+    public ChannelWriter<HomeConnectCommand> Commands { get; }
 
     internal HomeConnectClient(
-        ChannelWriter<IHomeConnectCommand> commands,
+        ChannelWriter<HomeConnectCommand> commands,
         ChannelReader<IHomeConnectMessage> streamOutput,
         IActorRef streamOwner,
         IDisposable? ownedResources = null)
@@ -27,22 +29,19 @@ internal sealed class HomeConnectClient : IHomeConnectClient
         _commands = commands;
         _streamOwner = streamOwner;
         _ownedResources = ownedResources;
-        _ = Task.Run(() => DispatchAsync(streamOutput));
+        Commands = new NonCompletingChannelWriter<HomeConnectCommand>(commands);
+        _dispatchLoop = DispatchAsync(streamOutput);
     }
 
-    public bool TrySend(IHomeConnectCommand command) => _commands.TryWrite(command);
+    public bool TrySend(HomeConnectCommand command) => _commands.TryWrite(command);
 
-    public ValueTask SendAsync(IHomeConnectCommand command, CancellationToken cancellationToken = default)
+    public ValueTask SendAsync(HomeConnectCommand command, CancellationToken cancellationToken = default)
         => _commands.WriteAsync(command, cancellationToken);
 
-    public async Task<ICorrelatedResponse> RequestAsync(IHomeConnectCommand command, CancellationToken cancellationToken = default)
+    public async Task<TResponse> RequestAsync<TResponse>(
+        RestCommand<TResponse> command, CancellationToken cancellationToken = default)
+        where TResponse : HomeConnectResponse
     {
-        if (command is not IRestCommand)
-        {
-            throw new InvalidOperationException(
-                $"{command.GetType().Name} is not a request/response command — use SendAsync and read from Responses.");
-        }
-
         var tcs = new TaskCompletionSource<ICorrelatedResponse>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_pending.TryAdd(command.CorrelationId, tcs))
         {
@@ -54,7 +53,13 @@ internal sealed class HomeConnectClient : IHomeConnectClient
         try
         {
             await _commands.WriteAsync(command, cancellationToken).ConfigureAwait(false);
-            return await tcs.Task.ConfigureAwait(false);
+            var response = await tcs.Task.ConfigureAwait(false);
+            if (response is HomeConnectErrorMessage error)
+            {
+                throw new HomeConnectApiException(error);
+            }
+
+            return (TResponse)response;
         }
         catch
         {
@@ -112,6 +117,7 @@ internal sealed class HomeConnectClient : IHomeConnectClient
 
         _commands.TryComplete();
         _streamOwner.Tell(PoisonPill.Instance);
+        try { _dispatchLoop.Wait(TimeSpan.FromSeconds(2)); } catch { /* observed; nothing to do */ }
         _ownedResources?.Dispose();
     }
 }

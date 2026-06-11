@@ -1,16 +1,14 @@
 using System.Text.Json;
-using TurboHomeConnect.Abstractions;
-using TurboHomeConnect.Internal;
 using TurboHomeConnect.Model;
 
 namespace TurboHomeConnect.Commands;
 
-public sealed record GetActiveProgramOptionsCommand(string HaId) : HomeConnectCommand, IRestCommand
+public sealed record GetActiveProgramOptionsCommand(string HaId) : RestCommand<ProgramOptionsResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest()
+    protected internal override HttpRequestMessage BuildRequest()
         => RestHelpers.Get($"api/homeappliances/{HaId}/programs/active/options");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<ProgramOptionsResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -20,12 +18,12 @@ public sealed record GetActiveProgramOptionsCommand(string HaId) : HomeConnectCo
     }
 }
 
-public sealed record GetActiveProgramOptionCommand(string HaId, string OptionKey) : HomeConnectCommand, IRestCommand
+public sealed record GetActiveProgramOptionCommand(string HaId, string OptionKey) : RestCommand<ProgramOptionResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest()
+    protected internal override HttpRequestMessage BuildRequest()
         => RestHelpers.Get($"api/homeappliances/{HaId}/programs/active/options/{OptionKey}");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<ProgramOptionResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -36,23 +34,23 @@ public sealed record GetActiveProgramOptionCommand(string HaId, string OptionKey
 }
 
 public sealed record SetActiveProgramOptionCommand(string HaId, string OptionKey, JsonElement Value, string? Unit = null)
-    : HomeConnectCommand, IRestCommand
+    : RestCommand<ProgramOptionUpdatedResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.PutJson(
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.PutJson(
         $"api/homeappliances/{HaId}/programs/active/options/{OptionKey}",
         new DataEnvelope<PutKeyValueBody>(new PutKeyValueBody(OptionKey, Value) { Unit = Unit }),
         HomeConnectJsonContext.Default.DataEnvelopePutKeyValueBody);
 
-    Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-        => Task.FromResult<ICorrelatedResponse>(new ProgramOptionUpdatedResponse(CorrelationId, HaId, ProgramScope.Active, OptionKey));
+    protected override Task<ProgramOptionUpdatedResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        => Task.FromResult(new ProgramOptionUpdatedResponse(CorrelationId, HaId, ProgramScope.Active, OptionKey));
 }
 
-public sealed record GetSelectedProgramOptionsCommand(string HaId) : HomeConnectCommand, IRestCommand
+public sealed record GetSelectedProgramOptionsCommand(string HaId) : RestCommand<ProgramOptionsResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest()
+    protected internal override HttpRequestMessage BuildRequest()
         => RestHelpers.Get($"api/homeappliances/{HaId}/programs/selected/options");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<ProgramOptionsResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -62,12 +60,12 @@ public sealed record GetSelectedProgramOptionsCommand(string HaId) : HomeConnect
     }
 }
 
-public sealed record GetSelectedProgramOptionCommand(string HaId, string OptionKey) : HomeConnectCommand, IRestCommand
+public sealed record GetSelectedProgramOptionCommand(string HaId, string OptionKey) : RestCommand<ProgramOptionResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest()
+    protected internal override HttpRequestMessage BuildRequest()
         => RestHelpers.Get($"api/homeappliances/{HaId}/programs/selected/options/{OptionKey}");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<ProgramOptionResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -78,15 +76,15 @@ public sealed record GetSelectedProgramOptionCommand(string HaId, string OptionK
 }
 
 public sealed record SetSelectedProgramOptionCommand(string HaId, string OptionKey, JsonElement Value, string? Unit = null)
-    : HomeConnectCommand, IRestCommand
+    : RestCommand<ProgramOptionUpdatedResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.PutJson(
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.PutJson(
         $"api/homeappliances/{HaId}/programs/selected/options/{OptionKey}",
         new DataEnvelope<PutKeyValueBody>(new PutKeyValueBody(OptionKey, Value) { Unit = Unit }),
         HomeConnectJsonContext.Default.DataEnvelopePutKeyValueBody);
 
-    Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-        => Task.FromResult<ICorrelatedResponse>(new ProgramOptionUpdatedResponse(CorrelationId, HaId, ProgramScope.Selected, OptionKey));
+    protected override Task<ProgramOptionUpdatedResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        => Task.FromResult(new ProgramOptionUpdatedResponse(CorrelationId, HaId, ProgramScope.Selected, OptionKey));
 }
 
 public enum ProgramScope

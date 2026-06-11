@@ -1,6 +1,7 @@
 using System.Threading.Channels;
 using Akka;
 using Akka.Streams.Dsl;
+using TurboHomeConnect;
 using TurboHomeConnect.Abstractions;
 
 namespace TurboHomeConnect.Tests.Support;
@@ -11,13 +12,13 @@ namespace TurboHomeConnect.Tests.Support;
 /// </summary>
 internal sealed class StubProtocolFlow
 {
-    private readonly Channel<IHomeConnectCommand> _seen = Channel.CreateUnbounded<IHomeConnectCommand>();
+    private readonly Channel<HomeConnectCommand> _seen = Channel.CreateUnbounded<HomeConnectCommand>();
     private readonly Channel<IHomeConnectMessage> _toEmit = Channel.CreateUnbounded<IHomeConnectMessage>();
 
-    public ChannelReader<IHomeConnectCommand> Seen => _seen.Reader;
+    public ChannelReader<HomeConnectCommand> Seen => _seen.Reader;
     public ChannelWriter<IHomeConnectMessage> Emit => _toEmit.Writer;
 
-    public Flow<IHomeConnectCommand, IHomeConnectMessage, NotUsed> AsFlow()
+    public Flow<HomeConnectCommand, IHomeConnectMessage, NotUsed> AsFlow()
     {
         var sink = ChannelSink.FromWriter(_seen.Writer, isOwner: true);
         var source = ChannelSource.FromReader(_toEmit.Reader);

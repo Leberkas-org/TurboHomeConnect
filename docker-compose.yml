@@ -7,11 +7,9 @@ services:
     container_name: turbo-home-connect-dashboard
     env_file:
       - .env
-    # 5099 = Blazor UI (open this in your browser).
-    # 7878 = OAuth callback (only used on first-time auth, before a token is cached).
+    # 5099 = Blazor UI + OAuth callback.
     ports:
       - "5099:5099"
-      - "7878:7878"
     volumes:
       - ./.tokens:/data
     stdin_open: true

@@ -41,6 +41,21 @@ public sealed record HomeConnectOAuthOptions
     /// </summary>
     public bool OpenBrowser { get; init; } = true;
 
+    /// <summary>
+    /// Optional custom callback receiver. When set, the built-in <see cref="System.Net.HttpListener"/>
+    /// is bypassed and the delegate is called instead to wait for the OAuth callback.
+    /// This allows ASP.NET apps to reuse Kestrel for the callback endpoint.
+    /// </summary>
+    public Func<Uri, CancellationToken, Task<AuthorizationCode>>? CallbackReceiver { get; init; }
+
+    /// <summary>
+    /// Fired when the authorize URL is ready, just before the flow waits for the callback.
+    /// Use this in UI hosts (e.g. Blazor) to navigate the user to the authorize page —
+    /// stdout and <see cref="OpenBrowser"/> only work when the user has access to the
+    /// server's console or desktop.
+    /// </summary>
+    public Action<Uri>? OnAuthorizeUrlReady { get; init; }
+
     /// <summary>Use the simulator's auth/token endpoints instead of production.</summary>
     public static HomeConnectOAuthOptions ForSimulator(string clientId, Uri redirectUri, string? clientSecret = null) =>
         new()

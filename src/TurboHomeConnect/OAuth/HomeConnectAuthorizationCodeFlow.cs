@@ -74,7 +74,10 @@ public sealed class HomeConnectAuthorizationCodeFlow : IDisposable
     /// </summary>
     public async Task<PersistedToken> AuthorizeInteractiveAsync(CancellationToken cancellationToken = default)
     {
-        if (!_options.BindToAllInterfaces
+        var receiver = _options.CallbackReceiver;
+
+        if (receiver is null
+            && !_options.BindToAllInterfaces
             && !string.Equals(_options.RedirectUri.Host, "localhost", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(_options.RedirectUri.Host, "127.0.0.1", StringComparison.Ordinal))
         {
@@ -86,6 +89,34 @@ public sealed class HomeConnectAuthorizationCodeFlow : IDisposable
         var state = Guid.NewGuid().ToString("N");
         var authorizeUrl = BuildAuthorizeUrl(state);
 
+        Console.WriteLine($"Open this URL to authorize:\n  {authorizeUrl}");
+        if (_options.OpenBrowser)
+        {
+            TryOpenBrowser(authorizeUrl);
+        }
+
+        _options.OnAuthorizeUrlReady?.Invoke(authorizeUrl);
+
+        var result = receiver is not null
+            ? await receiver(authorizeUrl, cancellationToken).ConfigureAwait(false)
+            : await ListenForCallbackAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!string.IsNullOrEmpty(result.State) && !string.Equals(result.State, state, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("OAuth state mismatch — possible CSRF.");
+        }
+        if (string.IsNullOrEmpty(result.Code))
+        {
+            throw new InvalidOperationException("OAuth callback did not include a code parameter.");
+        }
+
+        var token = await ExchangeCodeAsync(result.Code, cancellationToken).ConfigureAwait(false);
+        await _store.SaveAsync(token, cancellationToken).ConfigureAwait(false);
+        return token;
+    }
+
+    private async Task<AuthorizationCode> ListenForCallbackAsync(CancellationToken cancellationToken)
+    {
         var listenerHost = _options.BindToAllInterfaces ? "+" : _options.RedirectUri.Host;
         var listenerPrefix = $"{_options.RedirectUri.Scheme}://{listenerHost}:{_options.RedirectUri.Port}{_options.RedirectUri.AbsolutePath}";
         if (!listenerPrefix.EndsWith('/'))
@@ -97,42 +128,32 @@ public sealed class HomeConnectAuthorizationCodeFlow : IDisposable
         listener.Prefixes.Add(listenerPrefix);
         listener.Start();
 
-        Console.WriteLine($"Open this URL to authorize:\n  {authorizeUrl}");
-        if (_options.OpenBrowser)
+        try
         {
-            TryOpenBrowser(authorizeUrl);
+            var contextTask = listener.GetContextAsync();
+            var completed = await Task.WhenAny(contextTask, Task.Delay(Timeout.Infinite, cancellationToken))
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var context = await contextTask.ConfigureAwait(false);
+            var query = context.Request.QueryString;
+            var responseState = query["state"];
+            var code = query["code"];
+            var error = query["error"];
+
+            await WriteCallbackResponseAsync(context, error).ConfigureAwait(false);
+
+            if (!string.IsNullOrEmpty(error))
+            {
+                throw new InvalidOperationException($"OAuth authorize returned error '{error}': {query["error_description"]}");
+            }
+
+            return new AuthorizationCode(code ?? string.Empty, responseState);
         }
-
-        var contextTask = listener.GetContextAsync();
-        var completed = await Task.WhenAny(contextTask, Task.Delay(Timeout.Infinite, cancellationToken))
-            .ConfigureAwait(false);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var context = await contextTask.ConfigureAwait(false);
-        var query = context.Request.QueryString;
-        var responseState = query["state"];
-        var code = query["code"];
-        var error = query["error"];
-
-        await WriteCallbackResponseAsync(context, error).ConfigureAwait(false);
-        listener.Stop();
-
-        if (!string.IsNullOrEmpty(error))
+        finally
         {
-            throw new InvalidOperationException($"OAuth authorize returned error '{error}': {query["error_description"]}");
+            listener.Stop();
         }
-        if (!string.Equals(responseState, state, StringComparison.Ordinal))
-        {
-            throw new InvalidOperationException("OAuth state mismatch — possible CSRF.");
-        }
-        if (string.IsNullOrEmpty(code))
-        {
-            throw new InvalidOperationException("OAuth callback did not include a code parameter.");
-        }
-
-        var token = await ExchangeCodeAsync(code, cancellationToken).ConfigureAwait(false);
-        await _store.SaveAsync(token, cancellationToken).ConfigureAwait(false);
-        return token;
     }
 
     private Uri BuildAuthorizeUrl(string state)

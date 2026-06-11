@@ -1,34 +1,49 @@
 using System.Threading.Channels;
 using Akka;
 using Akka.Actor;
+using Akka.Event;
 using Akka.Streams;
 using Akka.Streams.Dsl;
 using TurboHomeConnect.Abstractions;
 
 namespace TurboHomeConnect.Internal;
 
-/// <summary>
-/// Owns the materialized stream. Actor start = stream start; actor stop = stream stop.
-/// No <c>Receive</c> handlers — the stream pulls/pushes through channels, the actor is
-/// purely a lifecycle anchor.
-/// </summary>
 internal sealed class StreamOwnerActor : ReceiveActor
 {
+    private readonly ILoggingAdapter _log = Context.GetLogger();
+
     public StreamOwnerActor(
-        ChannelReader<IHomeConnectCommand> commandReader,
+        ChannelReader<HomeConnectCommand> commandReader,
         ChannelWriter<IHomeConnectMessage> responseWriter,
-        Flow<IHomeConnectCommand, IHomeConnectMessage, NotUsed> flow)
+        Flow<HomeConnectCommand, IHomeConnectMessage, NotUsed> flow)
     {
         ChannelSource.FromReader(commandReader)
             .Via(flow)
-            .RunWith(
-                ChannelSink.FromWriter(responseWriter, isOwner: true),
-                Context.Materializer());
+            .WatchTermination((_, task) => task)
+            .To(ChannelSink.FromWriter(responseWriter, isOwner: true))
+            .Run(Context.Materializer())
+            .PipeTo(Self,
+                success: _ => StreamCompleted.Instance,
+                failure: ex => new StreamFailed(ex));
+
+        Receive<StreamCompleted>(_ => Context.Stop(Self));
+        Receive<StreamFailed>(failed =>
+        {
+            _log.Error(failed.Cause, "Home Connect protocol stream failed.");
+            Context.Stop(Self);
+        });
     }
 
     public static Props Props(
-        ChannelReader<IHomeConnectCommand> commandReader,
+        ChannelReader<HomeConnectCommand> commandReader,
         ChannelWriter<IHomeConnectMessage> responseWriter,
-        Flow<IHomeConnectCommand, IHomeConnectMessage, NotUsed> flow)
+        Flow<HomeConnectCommand, IHomeConnectMessage, NotUsed> flow)
         => Akka.Actor.Props.Create(() => new StreamOwnerActor(commandReader, responseWriter, flow));
+
+    private sealed record StreamCompleted
+    {
+        public static readonly StreamCompleted Instance = new();
+    }
+
+    private sealed record StreamFailed(Exception Cause);
 }

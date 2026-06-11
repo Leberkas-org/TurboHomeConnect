@@ -15,3 +15,5 @@ TestResults/
 artifacts/
 .env
 .tokens/
+
+docs/superpowers/

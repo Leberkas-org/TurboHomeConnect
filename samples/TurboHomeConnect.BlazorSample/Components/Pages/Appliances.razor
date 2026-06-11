@@ -1,6 +1,7 @@
 @page "/"
 @rendermode InteractiveServer
 @inject HomeConnectService Svc
+@inject IJSRuntime JS
 @implements IDisposable
 
 <h1>Appliances</h1>
@@ -11,6 +12,10 @@
         <p>No cached OAuth token found. Click <strong>Authorize</strong> — a browser tab will open
             on <code>simulator.home-connect.com</code>. Once you grant access, the page will update.</p>
         <button @onclick="AuthorizeAsync" disabled="@_busy">@(_busy ? "Authorizing…" : "Authorize")</button>
+        @if (Svc.PendingAuthorizeUrl is not null)
+        {
+            <p>Waiting for authorization… If a tab did not open, <a href="@Svc.PendingAuthorizeUrl" target="_blank">click here</a>.</p>
+        }
         @if (_authError is not null)
         {
             <pre class="err">@_authError</pre>
@@ -92,7 +97,17 @@ else
         }
     }
 
-    private void StateHasChangedSafe() => InvokeAsync(StateHasChanged);
+    private Uri? _lastOpenedUrl;
+
+    private void StateHasChangedSafe() => InvokeAsync(async () =>
+    {
+        StateHasChanged();
+        if (Svc.PendingAuthorizeUrl is { } url && url != _lastOpenedUrl)
+        {
+            _lastOpenedUrl = url;
+            await JS.InvokeVoidAsync("open", url.ToString(), "_blank");
+        }
+    });
 
     public void Dispose() => Svc.OnStateChanged -= StateHasChangedSafe;
 }

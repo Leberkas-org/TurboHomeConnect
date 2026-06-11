@@ -1,14 +1,12 @@
-using TurboHomeConnect.Abstractions;
-using TurboHomeConnect.Internal;
 using TurboHomeConnect.Model;
 
 namespace TurboHomeConnect.Commands;
 
-public sealed record GetActiveProgramCommand(string HaId) : HomeConnectCommand, IRestCommand
+public sealed record GetActiveProgramCommand(string HaId) : RestCommand<ActiveProgramResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/programs/active");
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/programs/active");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<ActiveProgramResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -18,11 +16,11 @@ public sealed record GetActiveProgramCommand(string HaId) : HomeConnectCommand, 
     }
 }
 
-public sealed record GetSelectedProgramCommand(string HaId) : HomeConnectCommand, IRestCommand
+public sealed record GetSelectedProgramCommand(string HaId) : RestCommand<SelectedProgramResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/programs/selected");
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/programs/selected");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<SelectedProgramResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -32,11 +30,11 @@ public sealed record GetSelectedProgramCommand(string HaId) : HomeConnectCommand
     }
 }
 
-public sealed record GetAvailableProgramsCommand(string HaId) : HomeConnectCommand, IRestCommand
+public sealed record GetAvailableProgramsCommand(string HaId) : RestCommand<AvailableProgramsResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/programs/available");
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/programs/available");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<AvailableProgramsResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -46,12 +44,12 @@ public sealed record GetAvailableProgramsCommand(string HaId) : HomeConnectComma
     }
 }
 
-public sealed record GetAvailableProgramCommand(string HaId, string ProgramKey) : HomeConnectCommand, IRestCommand
+public sealed record GetAvailableProgramCommand(string HaId, string ProgramKey) : RestCommand<AvailableProgramResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest()
+    protected internal override HttpRequestMessage BuildRequest()
         => RestHelpers.Get($"api/homeappliances/{HaId}/programs/available/{ProgramKey}");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<AvailableProgramResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -62,35 +60,35 @@ public sealed record GetAvailableProgramCommand(string HaId, string ProgramKey) 
 }
 
 public sealed record StartProgramCommand(string HaId, string ProgramKey, IReadOnlyList<ProgramOption>? Options = null)
-    : HomeConnectCommand, IRestCommand
+    : RestCommand<ProgramStartedResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.PutJson(
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.PutJson(
         $"api/homeappliances/{HaId}/programs/active",
         new DataEnvelope<PutProgramBody>(new PutProgramBody(ProgramKey) { Options = Options ?? [] }),
         HomeConnectJsonContext.Default.DataEnvelopePutProgramBody);
 
-    Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-        => Task.FromResult<ICorrelatedResponse>(new ProgramStartedResponse(CorrelationId, HaId, ProgramKey));
+    protected override Task<ProgramStartedResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        => Task.FromResult(new ProgramStartedResponse(CorrelationId, HaId, ProgramKey));
 }
 
 public sealed record SelectProgramCommand(string HaId, string ProgramKey, IReadOnlyList<ProgramOption>? Options = null)
-    : HomeConnectCommand, IRestCommand
+    : RestCommand<ProgramSelectedResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.PutJson(
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.PutJson(
         $"api/homeappliances/{HaId}/programs/selected",
         new DataEnvelope<PutProgramBody>(new PutProgramBody(ProgramKey) { Options = Options ?? [] }),
         HomeConnectJsonContext.Default.DataEnvelopePutProgramBody);
 
-    Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-        => Task.FromResult<ICorrelatedResponse>(new ProgramSelectedResponse(CorrelationId, HaId, ProgramKey));
+    protected override Task<ProgramSelectedResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        => Task.FromResult(new ProgramSelectedResponse(CorrelationId, HaId, ProgramKey));
 }
 
-public sealed record StopActiveProgramCommand(string HaId) : HomeConnectCommand, IRestCommand
+public sealed record StopActiveProgramCommand(string HaId) : RestCommand<ProgramStoppedResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.Delete($"api/homeappliances/{HaId}/programs/active");
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.Delete($"api/homeappliances/{HaId}/programs/active");
 
-    Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-        => Task.FromResult<ICorrelatedResponse>(new ProgramStoppedResponse(CorrelationId, HaId));
+    protected override Task<ProgramStoppedResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        => Task.FromResult(new ProgramStoppedResponse(CorrelationId, HaId));
 }
 
 public sealed record ActiveProgramResponse(Guid CorrelationId, string HaId, Program Program)

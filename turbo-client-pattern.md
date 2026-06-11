@@ -69,7 +69,7 @@ public interface IOpcUaClient : IDisposable
 The interface is protocol-specific. No shared cross-protocol base — the pattern is the shape, not a type hierarchy. Each protocol defines its own interface and implementation.
 
 - `SendAsync` = fire-and-forget. For subscriptions, one-way commands. Response arrives on `Responses`.
-- `RequestAsync` = send + wait for the correlated response. For method calls, reads. The correlated response is intercepted before it hits `Responses`, so the dispatch loop never sees it.
+- `RequestAsync` = send + wait for the correlated response. For method calls, reads. The correlated response is intercepted before it hits `Responses`, so the dispatch loop never sees it. Protocols with typed commands may strengthen this to a generic `RequestAsync<TResponse>(RestCommand<TResponse>)` — TurboHomeConnect does this; the shape (send + await correlated response) is unchanged.
 
 ### Correlation
 

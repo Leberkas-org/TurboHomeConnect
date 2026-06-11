@@ -1,14 +1,12 @@
-using TurboHomeConnect.Abstractions;
-using TurboHomeConnect.Internal;
 using TurboHomeConnect.Model;
 
 namespace TurboHomeConnect.Commands;
 
-public sealed record GetStatusCommand(string HaId) : HomeConnectCommand, IRestCommand
+public sealed record GetStatusCommand(string HaId) : RestCommand<StatusResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/status");
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/status");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<StatusResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -18,11 +16,11 @@ public sealed record GetStatusCommand(string HaId) : HomeConnectCommand, IRestCo
     }
 }
 
-public sealed record GetSingleStatusCommand(string HaId, string StatusKey) : HomeConnectCommand, IRestCommand
+public sealed record GetSingleStatusCommand(string HaId, string StatusKey) : RestCommand<SingleStatusResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/status/{StatusKey}");
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/status/{StatusKey}");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<SingleStatusResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,

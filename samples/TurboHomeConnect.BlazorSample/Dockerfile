@@ -27,7 +27,6 @@ VOLUME ["/data"]
 COPY --from=build /app ./
 
 EXPOSE 5099
-EXPOSE 7878
 
 ENV ASPNETCORE_URLS=http://+:5099
 

@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Akka.Actor;
+using TurboHomeConnect;
 using TurboHomeConnect.Abstractions;
 using TurboHomeConnect.Internal;
 
@@ -15,7 +16,7 @@ internal sealed class PatternHarness : IDisposable
     {
         Stub = new StubProtocolFlow();
 
-        var commands = Channel.CreateBounded<IHomeConnectCommand>(commandCapacity);
+        var commands = Channel.CreateBounded<HomeConnectCommand>(commandCapacity);
         var responses = Channel.CreateUnbounded<IHomeConnectMessage>();
 
         var owner = system.ActorOf(StreamOwnerActor.Props(commands.Reader, responses.Writer, Stub.AsFlow()));

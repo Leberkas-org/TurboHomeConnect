@@ -1,15 +1,13 @@
 using System.Text.Json;
-using TurboHomeConnect.Abstractions;
-using TurboHomeConnect.Internal;
 using TurboHomeConnect.Model;
 
 namespace TurboHomeConnect.Commands;
 
-public sealed record GetSettingsCommand(string HaId) : HomeConnectCommand, IRestCommand
+public sealed record GetSettingsCommand(string HaId) : RestCommand<SettingsResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/settings");
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/settings");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<SettingsResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -19,11 +17,11 @@ public sealed record GetSettingsCommand(string HaId) : HomeConnectCommand, IRest
     }
 }
 
-public sealed record GetSingleSettingCommand(string HaId, string SettingKey) : HomeConnectCommand, IRestCommand
+public sealed record GetSingleSettingCommand(string HaId, string SettingKey) : RestCommand<SingleSettingResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/settings/{SettingKey}");
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/settings/{SettingKey}");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<SingleSettingResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -34,15 +32,15 @@ public sealed record GetSingleSettingCommand(string HaId, string SettingKey) : H
 }
 
 public sealed record SetSettingCommand(string HaId, string SettingKey, JsonElement Value, string? Unit = null)
-    : HomeConnectCommand, IRestCommand
+    : RestCommand<SettingUpdatedResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.PutJson(
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.PutJson(
         $"api/homeappliances/{HaId}/settings/{SettingKey}",
         new DataEnvelope<PutKeyValueBody>(new PutKeyValueBody(SettingKey, Value) { Unit = Unit }),
         HomeConnectJsonContext.Default.DataEnvelopePutKeyValueBody);
 
-    Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-        => Task.FromResult<ICorrelatedResponse>(new SettingUpdatedResponse(CorrelationId, HaId, SettingKey));
+    protected override Task<SettingUpdatedResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+        => Task.FromResult(new SettingUpdatedResponse(CorrelationId, HaId, SettingKey));
 }
 
 public sealed record SettingsResponse(Guid CorrelationId, string HaId, IReadOnlyList<SettingValue> Settings)

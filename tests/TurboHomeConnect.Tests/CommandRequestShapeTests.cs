@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Shouldly;
+using TurboHomeConnect;
 using TurboHomeConnect.Commands;
-using TurboHomeConnect.Internal;
 using TurboHomeConnect.Model;
 using Xunit;
 
@@ -12,7 +12,7 @@ public sealed class CommandRequestShapeTests
     [Fact]
     public void GetAppliances_is_GET_with_BSH_accept()
     {
-        IRestCommand cmd = new GetAppliancesCommand();
+        RestCommandBase cmd = new GetAppliancesCommand();
         using var req = cmd.BuildRequest();
 
         req.Method.ShouldBe(HttpMethod.Get);
@@ -23,7 +23,7 @@ public sealed class CommandRequestShapeTests
     [Fact]
     public void GetSingleStatus_includes_haId_and_key_in_path()
     {
-        IRestCommand cmd = new GetSingleStatusCommand("BSH-HCS01-1234", "BSH.Common.Status.OperationState");
+        RestCommandBase cmd = new GetSingleStatusCommand("BSH-HCS01-1234", "BSH.Common.Status.OperationState");
         using var req = cmd.BuildRequest();
 
         req.RequestUri!.ToString()
@@ -34,7 +34,7 @@ public sealed class CommandRequestShapeTests
     public async Task SetSetting_PUT_carries_data_envelope_body()
     {
         var value = JsonSerializer.SerializeToElement(true);
-        IRestCommand cmd = new SetSettingCommand("haId-1", "BSH.Common.Setting.PowerState", value);
+        RestCommandBase cmd = new SetSettingCommand("haId-1", "BSH.Common.Setting.PowerState", value);
 
         using var req = cmd.BuildRequest();
         req.Method.ShouldBe(HttpMethod.Put);
@@ -53,7 +53,7 @@ public sealed class CommandRequestShapeTests
     {
         var temperature = new ProgramOption("LaundryCare.Washer.Option.Temperature",
             JsonSerializer.SerializeToElement("LaundryCare.Washer.EnumType.Temperature.GC40"));
-        IRestCommand cmd = new StartProgramCommand("haId-1", "LaundryCare.Washer.Program.Cotton", [temperature]);
+        RestCommandBase cmd = new StartProgramCommand("haId-1", "LaundryCare.Washer.Program.Cotton", [temperature]);
 
         using var req = cmd.BuildRequest();
         req.Method.ShouldBe(HttpMethod.Put);
@@ -71,7 +71,7 @@ public sealed class CommandRequestShapeTests
     [Fact]
     public void StopActiveProgram_is_DELETE()
     {
-        IRestCommand cmd = new StopActiveProgramCommand("haId-1");
+        RestCommandBase cmd = new StopActiveProgramCommand("haId-1");
         using var req = cmd.BuildRequest();
         req.Method.ShouldBe(HttpMethod.Delete);
         req.RequestUri!.ToString().ShouldBe("api/homeappliances/haId-1/programs/active");
@@ -80,12 +80,12 @@ public sealed class CommandRequestShapeTests
     [Fact]
     public void SubscribeEvents_uses_event_stream_accept_and_correct_path()
     {
-        ISubscribeCommand all = new SubscribeEventsCommand();
+        SubscribeCommand all = new SubscribeEventsCommand();
         using var reqAll = all.BuildRequest();
         reqAll.RequestUri!.ToString().ShouldBe("api/homeappliances/events");
         reqAll.Headers.Accept.ShouldContain(h => h.MediaType == "text/event-stream");
 
-        ISubscribeCommand scoped = new SubscribeEventsCommand("haId-1");
+        SubscribeCommand scoped = new SubscribeEventsCommand("haId-1");
         using var reqScoped = scoped.BuildRequest();
         reqScoped.RequestUri!.ToString().ShouldBe("api/homeappliances/haId-1/events");
     }

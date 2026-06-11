@@ -1,14 +1,12 @@
-using TurboHomeConnect.Abstractions;
-using TurboHomeConnect.Internal;
 using TurboHomeConnect.Model;
 
 namespace TurboHomeConnect.Commands;
 
-public sealed record GetImagesCommand(string HaId) : HomeConnectCommand, IRestCommand
+public sealed record GetImagesCommand(string HaId) : RestCommand<ImagesResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/images");
+    protected internal override HttpRequestMessage BuildRequest() => RestHelpers.Get($"api/homeappliances/{HaId}/images");
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<ImagesResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var data = await RestHelpers.ReadDataAsync(
             response,
@@ -18,16 +16,16 @@ public sealed record GetImagesCommand(string HaId) : HomeConnectCommand, IRestCo
     }
 }
 
-public sealed record GetImageBytesCommand(string HaId, string ImageKey) : HomeConnectCommand, IRestCommand
+public sealed record GetImageBytesCommand(string HaId, string ImageKey) : RestCommand<ImageBytesResponse>
 {
-    HttpRequestMessage IRestCommand.BuildRequest()
+    protected internal override HttpRequestMessage BuildRequest()
     {
         // Image endpoint returns the binary content directly, not a JSON envelope.
         var request = new HttpRequestMessage(HttpMethod.Get, $"api/homeappliances/{HaId}/images/{ImageKey}");
         return request;
     }
 
-    async Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    protected override async Task<ImageBytesResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
         var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);

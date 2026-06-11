@@ -19,7 +19,7 @@ dotnet add package TurboHomeConnect
 
 The sample app ships with a Dockerfile + `docker-compose.yml` + `.env`. Three steps:
 
-1. Register an app at https://developer.home-connect.com (one for the simulator is enough to start). Pick `http://localhost:7878/oauth/callback` as a redirect URI.
+1. Register an app at https://developer.home-connect.com (one for the simulator is enough to start). Pick `http://localhost:5099/oauth/callback` as a redirect URI.
 2. Copy your client id/secret into `.env`:
    ```sh
    cp .env.example .env
@@ -38,10 +38,8 @@ The sample prints the authorize URL on first run — click it, authorize in your
 |---------------------------------------|----------------------------------------------------------------------|
 | `HOMECONNECT_CLIENT_ID` / `_SECRET`   | From the developer portal.                                           |
 | `HOMECONNECT_USE_SIMULATOR`           | `1` for simulator, `0` for production.                               |
-| `HOMECONNECT_BIND_ALL_INTERFACES`     | `1` inside Docker so the listener accepts the port-forwarded traffic. |
 | `HOMECONNECT_OPEN_BROWSER`            | `0` for headless — URL is printed instead.                           |
 | `HOMECONNECT_TOKEN_FILE`              | Where to persist tokens (inside the container, mounted as a volume). |
-| `HOMECONNECT_STREAM_SECONDS`          | How long to keep the SSE subscription open.                          |
 
 ## Quick start — full surface in five lines
 
@@ -56,18 +54,20 @@ using var client = HomeConnectBuilder.Create()
     .StaticAccessToken(myAccessToken)             // or .TokenProvider(...)
     .Build(system);
 
-var appliances = (AppliancesResponse)await client.RequestAsync(new GetAppliancesCommand());
+var appliances = await client.RequestAsync(new GetAppliancesCommand());
 foreach (var a in appliances.Appliances) Console.WriteLine($"{a.HaId} — {a.Type}");
 ```
 
 ## Three usage patterns
 
-### 1. RequestAsync — REST-style request/response
+### 1. RequestAsync — typed REST request/response
 
 ```csharp
-var status = (StatusResponse)await client.RequestAsync(new GetStatusCommand(haId));
+var status = await client.RequestAsync(new GetStatusCommand(haId));
 foreach (var s in status.Status) Console.WriteLine($"{s.Key} = {s.Value}");
 ```
+
+`RequestAsync` returns the concrete typed response (`StatusResponse`, `AppliancesResponse`, etc.) — no casting or pattern matching needed. On HTTP errors it throws `HomeConnectApiException` with `StatusCode`, `ErrorKey`, and `CorrelationId`.
 
 ### 2. SendAsync — fire-and-forget, response arrives on the channel
 
@@ -119,7 +119,7 @@ using var oauth = new HomeConnectAuthorizationCodeFlow(new HomeConnectOAuthOptio
 {
     ClientId      = "...",
     ClientSecret  = "...",
-    RedirectUri   = new Uri("http://localhost:7878/oauth/callback"),
+    RedirectUri   = new Uri("http://localhost:5099/oauth/callback"),
     TokenStore    = new InMemoryTokenStore(),     // implement IPersistedTokenStore for disk-backed
 });
 
@@ -145,6 +145,42 @@ The helper hosts a local `HttpListener` for the OAuth callback and refreshes tok
 | `RestParallelism(n)`              | In-flight REST requests.                                      | 4        |
 | `MaxConcurrentSubscriptions(n)`   | Parallel SSE streams.                                         | 4        |
 | `SseRestartSettings(s)`           | Backoff + max-restart policy for SSE.                         | 1s/60s/0.2 |
+
+### 4. Custom commands — wrap endpoints the library doesn't cover
+
+```csharp
+public sealed record GetFridgeDoorStateCommand(string HaId) : RestCommand<FridgeDoorResponse>
+{
+    protected override HttpRequestMessage BuildRequest()
+        => RestHelpers.Get($"api/homeappliances/{HaId}/status/Refrigeration.Common.Status.Door");
+
+    protected override async Task<FridgeDoorResponse> MapResponseAsync(
+        HttpResponseMessage response, CancellationToken ct)
+    {
+        var data = await RestHelpers.ReadDataAsync(response, MyJsonContext.Default.DataEnvelopeDoorState, ct);
+        return new FridgeDoorResponse(CorrelationId, HaId, data.IsOpen);
+    }
+}
+```
+
+`RestHelpers` and `DataEnvelope<T>` are public — reuse the BSH media type plumbing rather than reimplementing it.
+
+### 5. Bring your own stream — Akka.Streams integration
+
+The client exposes both channel endpoints for direct stream composition:
+
+```csharp
+// feed commands from a custom Akka.Streams graph
+mySource.RunWith(ChannelSink.FromWriter(client.Commands, isOwner: false), materializer);
+
+// pump all messages into an actor
+ChannelSource.FromReader(client.Responses)
+    .RunWith(Sink.ActorRefWithBackpressure<IHomeConnectMessage>(
+        myActor, initMessage, ackMessage, completeMessage, ex => new StreamFailed(ex)),
+        materializer);
+```
+
+Two caveats: responses claimed by a pending `RequestAsync` are intercepted and never appear on `Responses`; multiple `Responses` readers compete (each message goes to exactly one reader).
 
 ## Architecture
 

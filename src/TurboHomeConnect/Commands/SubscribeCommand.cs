@@ -1,6 +1,5 @@
 using System.Net.Http.Headers;
 using TurboHomeConnect.Abstractions;
-using TurboHomeConnect.Internal;
 using TurboHomeConnect.Model;
 
 namespace TurboHomeConnect.Commands;
@@ -9,9 +8,9 @@ namespace TurboHomeConnect.Commands;
 /// Opens the SSE event stream. Pass <see cref="HaId"/> to scope to a single appliance,
 /// or leave null to receive events for every appliance on the account.
 /// </summary>
-public sealed record SubscribeEventsCommand(string? HaId = null) : HomeConnectCommand, ISubscribeCommand
+public sealed record SubscribeEventsCommand(string? HaId = null) : SubscribeCommand
 {
-    HttpRequestMessage ISubscribeCommand.BuildRequest()
+    protected internal override HttpRequestMessage BuildRequest()
     {
         var path = HaId is null
             ? "api/homeappliances/events"

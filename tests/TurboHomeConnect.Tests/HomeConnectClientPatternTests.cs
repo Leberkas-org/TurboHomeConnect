@@ -1,7 +1,7 @@
 using Akka.TestKit.Xunit2;
 using Shouldly;
+using TurboHomeConnect;
 using TurboHomeConnect.Abstractions;
-using TurboHomeConnect.Internal;
 using TurboHomeConnect.Tests.Support;
 using Xunit;
 
@@ -66,13 +66,12 @@ public sealed class HomeConnectClientPatternTests : TestKit
         harness.Client.TrySend(new TestCommand()).ShouldBeFalse();
     }
 
-    // Stand-in REST command for the pattern tests — the stub flow doesn't dispatch HTTP,
-    // so BuildRequest/MapResponseAsync are never invoked.
-    private sealed record TestCommand : HomeConnectCommand, IRestCommand
+    private sealed record TestCommand : RestCommand<TestResponse>
     {
-        HttpRequestMessage IRestCommand.BuildRequest() => new(HttpMethod.Get, "test");
-        Task<ICorrelatedResponse> IRestCommand.MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
-            => Task.FromResult<ICorrelatedResponse>(new TestResponse(CorrelationId, "unused"));
+        protected internal override HttpRequestMessage BuildRequest() => new(HttpMethod.Get, "test");
+
+        protected override Task<TestResponse> MapResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+            => Task.FromResult(new TestResponse(CorrelationId, "unused"));
     }
 
     private sealed record TestResponse(Guid CorrelationId, string Payload)

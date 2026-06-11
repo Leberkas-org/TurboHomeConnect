@@ -5,9 +5,9 @@ using System.Text.Json.Serialization.Metadata;
 using TurboHomeConnect.Abstractions;
 using TurboHomeConnect.Model;
 
-namespace TurboHomeConnect.Internal;
+namespace TurboHomeConnect;
 
-internal static class RestHelpers
+public static class RestHelpers
 {
     public const string JsonMediaType = "application/vnd.bsh.sdk.v1+json";
 

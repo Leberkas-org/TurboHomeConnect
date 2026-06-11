@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using Akka;
 using Akka.Streams;
@@ -8,7 +9,7 @@ namespace TurboHomeConnect.Internal;
 
 internal static class HomeConnectFlow
 {
-    public static Flow<IHomeConnectCommand, IHomeConnectMessage, NotUsed> Build(
+    public static Flow<HomeConnectCommand, IHomeConnectMessage, NotUsed> Build(
         HttpClient http,
         Func<CancellationToken, Task<string>> tokenProvider,
         int restParallelism,
@@ -23,19 +24,24 @@ internal static class HomeConnectFlow
 
         return Flow.FromGraph(GraphDsl.Create(builder =>
         {
-            var partition = builder.Add(new Partition<IHomeConnectCommand>(
+            var partition = builder.Add(new Partition<HomeConnectCommand>(
                 outputPorts: 2,
-                partitioner: cmd => cmd is ISubscribeCommand ? 1 : 0));
+                partitioner: cmd => cmd switch
+                {
+                    SubscribeCommand => 1,
+                    RestCommandBase => 0,
+                    _ => throw new UnreachableException($"Unknown command kind: {cmd.GetType().Name}"),
+                }));
             var merge = builder.Add(new Merge<IHomeConnectMessage>(inputPorts: 2));
 
             builder.From(partition.Out(0)).Via(builder.Add(restFlow)).To(merge.In(0));
             builder.From(partition.Out(1)).Via(builder.Add(sseFlow)).To(merge.In(1));
 
-            return new FlowShape<IHomeConnectCommand, IHomeConnectMessage>(partition.In, merge.Out);
+            return new FlowShape<HomeConnectCommand, IHomeConnectMessage>(partition.In, merge.Out);
         }));
     }
 
-    private static Flow<IHomeConnectCommand, IHomeConnectMessage, NotUsed> BuildRestFlow(
+    private static Flow<HomeConnectCommand, IHomeConnectMessage, NotUsed> BuildRestFlow(
         HttpClient http,
         Func<CancellationToken, Task<string>> tokenProvider,
         int parallelism,
@@ -45,20 +51,20 @@ internal static class HomeConnectFlow
     {
         // Token-bucket shaping: burst up to `rateLimitElements`, refill at that rate per `rateLimitPer`.
         // Excess elements are queued; never failed.
-        return Flow.Create<IHomeConnectCommand>()
+        return Flow.Create<HomeConnectCommand>()
             .Throttle(
                 elements: rateLimitElements,
                 per: rateLimitPer,
                 maximumBurst: rateLimitElements,
                 mode: ThrottleMode.Shaping)
             .SelectAsyncUnordered(parallelism, async cmd =>
-                (IHomeConnectMessage)await DispatchRestAsync(http, tokenProvider, (IRestCommand)cmd, restTimeout).ConfigureAwait(false));
+                (IHomeConnectMessage)await DispatchRestAsync(http, tokenProvider, (RestCommandBase)cmd, restTimeout).ConfigureAwait(false));
     }
 
     private static async Task<ICorrelatedResponse> DispatchRestAsync(
         HttpClient http,
         Func<CancellationToken, Task<string>> tokenProvider,
-        IRestCommand command,
+        RestCommandBase command,
         TimeSpan restTimeout)
     {
         using var cts = new CancellationTokenSource(restTimeout);
@@ -75,7 +81,7 @@ internal static class HomeConnectFlow
                     .ConfigureAwait(false);
             }
 
-            return await command.MapResponseAsync(response, cts.Token).ConfigureAwait(false);
+            return await command.MapResponseCoreAsync(response, cts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
@@ -88,14 +94,14 @@ internal static class HomeConnectFlow
         }
     }
 
-    private static Flow<IHomeConnectCommand, IHomeConnectMessage, NotUsed> BuildSseFlow(
+    private static Flow<HomeConnectCommand, IHomeConnectMessage, NotUsed> BuildSseFlow(
         HttpClient http,
         Func<CancellationToken, Task<string>> tokenProvider,
         int maxConcurrentSubscriptions,
         RestartSettings sseRestart)
     {
-        return Flow.Create<IHomeConnectCommand>()
+        return Flow.Create<HomeConnectCommand>()
             .MergeMany(maxConcurrentSubscriptions,
-                cmd => HomeConnectSseSource.Create(http, tokenProvider, (ISubscribeCommand)cmd, sseRestart));
+                cmd => HomeConnectSseSource.Create(http, tokenProvider, (SubscribeCommand)cmd, sseRestart));
     }
 }

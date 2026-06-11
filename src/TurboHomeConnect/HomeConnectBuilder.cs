@@ -192,7 +192,7 @@ public sealed class HomeConnectBuilder
             _rateLimitPer,
             _sseRestart);
 
-        var commands = Channel.CreateBounded<IHomeConnectCommand>(
+        var commands = Channel.CreateBounded<HomeConnectCommand>(
             new BoundedChannelOptions(_commandCapacity)
             {
                 FullMode = BoundedChannelFullMode.Wait,
